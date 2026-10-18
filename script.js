@@ -1,199 +1,323 @@
-```javascript
-const chatForm = document.getElementById("chatForm");
-const userInput = document.getElementById("userInput");
-const chatArea = document.getElementById("chatArea");
-const sendButton = document.getElementById("sendButton");
-const clearChatButton = document.getElementById("clearChat");
+// ========================================
+// LANGUAGE TRANSLATION TOOL
+// Translation API: MyMemory
+// ========================================
 
-const initialMessage = `
-    Hello! 👋 Welcome to the College FAQ Assistant.
-    <br><br>
-    You can ask me about admissions, courses, fees,
-    examinations, attendance, internships, and placements.
-    How can I help you today?
-`;
+// Get HTML elements
+const sourceLanguage = document.getElementById("sourceLanguage");
+const targetLanguage = document.getElementById("targetLanguage");
 
-// Create a timestamp.
-function getCurrentTime() {
-    return new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit"
-    });
+const inputText = document.getElementById("inputText");
+const outputText = document.getElementById("outputText");
+
+const translateButton = document.getElementById("translateButton");
+const swapButton = document.getElementById("swapButton");
+const clearButton = document.getElementById("clearButton");
+const copyButton = document.getElementById("copyButton");
+const speakButton = document.getElementById("speakButton");
+
+const characterCount = document.getElementById("characterCount");
+const outputLanguage = document.getElementById("outputLanguage");
+const statusMessage = document.getElementById("statusMessage");
+
+const MAX_CHARACTERS = 500;
+
+// ========================================
+// UPDATE CHARACTER COUNT
+// ========================================
+
+inputText.addEventListener("input", function () {
+    characterCount.textContent =
+        `${inputText.value.length} / ${MAX_CHARACTERS}`;
+});
+
+// ========================================
+// SHOW STATUS MESSAGE
+// ========================================
+
+function showStatus(message, isError = false) {
+    statusMessage.textContent = message;
+
+    statusMessage.classList.toggle("error", isError);
 }
 
-// Add a message to the chat window.
-function addMessage(message, sender) {
-    const messageElement = document.createElement("div");
+// ========================================
+// GET SELECTED LANGUAGE NAME
+// ========================================
 
-    messageElement.className =
-        sender === "user"
-            ? "message user-message"
-            : "message bot-message";
-
-    const avatar = document.createElement("div");
-    avatar.className = "message-avatar";
-    avatar.textContent = sender === "user" ? "👤" : "🤖";
-
-    const content = document.createElement("div");
-    content.className = "message-content";
-
-    const bubble = document.createElement("div");
-    bubble.className = "message-bubble";
-
-    // Use textContent to avoid interpreting user input as HTML.
-    bubble.textContent = message;
-
-    const time = document.createElement("span");
-    time.className = "message-time";
-    time.textContent = getCurrentTime();
-
-    content.appendChild(bubble);
-    content.appendChild(time);
-
-    messageElement.appendChild(avatar);
-    messageElement.appendChild(content);
-
-    chatArea.appendChild(messageElement);
-
-    chatArea.scrollTop = chatArea.scrollHeight;
-
-    return messageElement;
+function getLanguageName(selectElement) {
+    return selectElement.options[
+        selectElement.selectedIndex
+    ].text;
 }
 
-// Show a temporary loading message.
-function showTypingIndicator() {
-    const element = addMessage(
-        "Typing...",
-        "bot"
-    );
+// ========================================
+// TRANSLATE TEXT
+// ========================================
 
-    element.querySelector(".message-bubble").classList.add(
-        "typing-indicator"
-    );
+async function translateText() {
+    const text = inputText.value.trim();
 
-    return element;
-}
+    const source = sourceLanguage.value;
+    const target = targetLanguage.value;
 
-// Send a question to the Flask backend.
-async function sendMessage(message) {
-    const question = message.trim();
-
-    if (!question) {
+    // Validate input
+    if (!text) {
+        showStatus("Please enter some text to translate.", true);
+        inputText.focus();
         return;
     }
 
-    addMessage(question, "user");
+    if (source === target) {
+        outputText.textContent = text;
+        outputLanguage.textContent = getLanguageName(targetLanguage);
 
-    userInput.value = "";
+        showStatus("Source and target languages are the same.");
+        return;
+    }
 
-    sendButton.disabled = true;
-    userInput.disabled = true;
-    sendButton.textContent = "...";
+    // Show loading state
+    translateButton.disabled = true;
+    translateButton.textContent = "Translating...";
+    outputText.textContent = "Please wait while we translate your text...";
+    outputText.classList.add("output-placeholder");
 
-    const typingIndicator = showTypingIndicator();
+    showStatus("");
 
     try {
-        const response = await fetch("/chat", {
-            method: "POST",
+        // Build the MyMemory API request
+        const url = new URL(
+            "https://api.mymemory.translated.net/get"
+        );
 
-            headers: {
-                "Content-Type": "application/json"
-            },
+        url.searchParams.set("q", text);
+        url.searchParams.set("langpair", `${source}|${target}`);
 
-            body: JSON.stringify({
-                message: question
-            })
-        });
+        // Request translation
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error("The translation service is unavailable.");
+        }
 
         const data = await response.json();
 
-        typingIndicator.remove();
-
-        if (!response.ok) {
+        // Check the API response
+        if (
+            data.responseStatus !== 200 ||
+            !data.responseData ||
+            typeof data.responseData.translatedText !== "string"
+        ) {
             throw new Error(
-                data.error || "Something went wrong."
+                data.responseDetails || "Translation failed."
             );
         }
 
-        addMessage(data.answer, "bot");
+        // Display translated text
+        outputText.textContent =
+            decodeHtmlEntities(data.responseData.translatedText);
 
-        // Display the matched FAQ and similarity score in the console.
-        if (data.matched_question) {
-            console.log("Matched FAQ:", data.matched_question);
+        outputText.classList.remove("output-placeholder");
 
-            console.log(
-                "Cosine similarity:",
-                data.similarity
-            );
-        }
+        outputLanguage.textContent =
+            getLanguageName(targetLanguage);
+
+        showStatus("Translation completed successfully!");
 
     } catch (error) {
-        typingIndicator.remove();
+        outputText.textContent =
+            "Sorry, translation could not be completed.";
 
-        addMessage(
-            "Sorry, I couldn't connect to the chatbot server. " +
-            "Please check that the Flask application is running and try again.",
-            "bot"
+        outputText.classList.add("output-placeholder");
+
+        showStatus(
+            error.message.includes("Failed to fetch")
+                ? "Network error. Check your internet connection or try again later."
+                : error.message,
+            true
         );
 
-        console.error("Chatbot error:", error);
-
     } finally {
-        sendButton.disabled = false;
-        userInput.disabled = false;
-        sendButton.textContent = "Send ➤";
-        userInput.focus();
+        translateButton.disabled = false;
+        translateButton.innerHTML = "<span>🌍</span> Translate Text";
     }
 }
 
-// Handle form submission.
-chatForm.addEventListener("submit", function (event) {
-    event.preventDefault();
+// ========================================
+// DECODE HTML ENTITIES
+// ========================================
 
-    sendMessage(userInput.value);
+function decodeHtmlEntities(text) {
+    const textarea = document.createElement("textarea");
+
+    textarea.innerHTML = text;
+
+    return textarea.value;
+}
+
+// ========================================
+// TRANSLATE BUTTON
+// ========================================
+
+translateButton.addEventListener("click", translateText);
+
+// ========================================
+// SWAP SOURCE AND TARGET LANGUAGES
+// ========================================
+
+swapButton.addEventListener("click", function () {
+    const previousSource = sourceLanguage.value;
+    const previousTarget = targetLanguage.value;
+
+    sourceLanguage.value = previousTarget;
+    targetLanguage.value = previousSource;
+
+    // Swap the text and its translation
+    const previousInput = inputText.value;
+    const previousOutput = outputText.textContent;
+
+    if (
+        previousOutput !== "Your translation will appear here..." &&
+        previousOutput !== "Please wait while we translate your text..." &&
+        previousOutput !== "Sorry, translation could not be completed."
+    ) {
+        inputText.value = previousOutput;
+
+        outputText.textContent = previousInput ||
+            "Your translation will appear here...";
+
+        outputText.classList.toggle(
+            "output-placeholder",
+            !previousInput
+        );
+    }
+
+    characterCount.textContent =
+        `${inputText.value.length} / ${MAX_CHARACTERS}`;
+
+    outputLanguage.textContent = getLanguageName(targetLanguage);
+
+    showStatus("");
 });
 
-// Handle suggested questions.
-document.querySelectorAll(".suggestion-btn").forEach(function (button) {
-    button.addEventListener("click", function () {
-        sendMessage(button.dataset.question);
-    });
+// ========================================
+// CLEAR TEXT
+// ========================================
+
+clearButton.addEventListener("click", function () {
+    inputText.value = "";
+
+    outputText.textContent =
+        "Your translation will appear here...";
+
+    outputText.classList.add("output-placeholder");
+
+    characterCount.textContent = `0 / ${MAX_CHARACTERS}`;
+
+    showStatus("");
+
+    inputText.focus();
 });
 
-// Clear the visible conversation.
-clearChatButton.addEventListener("click", function () {
-    chatArea.replaceChildren();
+// ========================================
+// COPY TRANSLATED TEXT
+// ========================================
 
-    const welcomeMessage = document.createElement("div");
-    welcomeMessage.className = "message bot-message";
+copyButton.addEventListener("click", async function () {
+    const translatedText = outputText.textContent;
 
-    const avatar = document.createElement("div");
-    avatar.className = "message-avatar";
-    avatar.textContent = "🤖";
+    if (
+        !translatedText ||
+        translatedText === "Your translation will appear here..." ||
+        translatedText === "Please wait while we translate your text..." ||
+        translatedText === "Sorry, translation could not be completed."
+    ) {
+        showStatus("There is no translated text to copy.", true);
+        return;
+    }
 
-    const content = document.createElement("div");
-    content.className = "message-content";
+    try {
+        await navigator.clipboard.writeText(translatedText);
 
-    const bubble = document.createElement("div");
-    bubble.className = "message-bubble";
+        showStatus("Translation copied to clipboard!");
 
-    bubble.textContent =
-        "Hello! 👋 Welcome to the College FAQ Assistant. " +
-        "Ask me about admissions, courses, fees, examinations, " +
-        "attendance, internships, or placements.";
+    } catch (error) {
+        // Fallback for browsers that do not support Clipboard API
+        const temporaryTextArea = document.createElement("textarea");
 
-    const time = document.createElement("span");
-    time.className = "message-time";
-    time.textContent = getCurrentTime();
+        temporaryTextArea.value = translatedText;
 
-    content.appendChild(bubble);
-    content.appendChild(time);
+        document.body.appendChild(temporaryTextArea);
 
-    welcomeMessage.appendChild(avatar);
-    welcomeMessage.appendChild(content);
+        temporaryTextArea.select();
 
-    chatArea.appendChild(welcomeMessage);
+        const copied = document.execCommand("copy");
 
-    userInput.focus();
+        temporaryTextArea.remove();
+
+        if (copied) {
+            showStatus("Translation copied to clipboard!");
+        } else {
+            showStatus("Unable to copy. Please select and copy manually.", true);
+        }
+    }
 });
-```
+
+// ========================================
+// TEXT-TO-SPEECH
+// ========================================
+
+speakButton.addEventListener("click", function () {
+    const translatedText = outputText.textContent;
+
+    if (
+        !translatedText ||
+        translatedText === "Your translation will appear here..." ||
+        translatedText === "Please wait while we translate your text..." ||
+        translatedText === "Sorry, translation could not be completed."
+    ) {
+        showStatus("There is no translated text to read.", true);
+        return;
+    }
+
+    if (!("speechSynthesis" in window)) {
+        showStatus("Text-to-speech is not supported by this browser.", true);
+        return;
+    }
+
+    // Stop any previous speech
+    window.speechSynthesis.cancel();
+
+    const speech = new SpeechSynthesisUtterance(translatedText);
+
+    // Set speech language
+    speech.lang = targetLanguage.value;
+
+    speech.rate = 0.9;
+    speech.pitch = 1;
+
+    speech.onerror = function () {
+        showStatus("Unable to play speech. Please try again.", true);
+    };
+
+    window.speechSynthesis.speak(speech);
+
+    showStatus("Playing translated text...");
+});
+
+// ========================================
+// UPDATE TARGET LANGUAGE LABEL
+// ========================================
+
+targetLanguage.addEventListener("change", function () {
+    outputLanguage.textContent = getLanguageName(targetLanguage);
+    showStatus("");
+});
+
+// ========================================
+// INITIAL SETUP
+// ========================================
+
+outputText.classList.add("output-placeholder");
+
+outputLanguage.textContent = getLanguageName(targetLanguage);
